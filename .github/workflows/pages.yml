@@ -1,0 +1,55 @@
+# Nasazení Coverage_Report.html na GitHub Pages.
+# Stránka je veřejná, proto se před nasazením kontroluje, že v souboru nejsou zapečená data.
+name: Nasazení na GitHub Pages
+
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths: ['Coverage_Report.html', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Kontrola, že v souboru nejsou zapečená data
+        run: |
+          if ! grep -q '^let D = null;' Coverage_Report.html; then
+            echo "::error::Coverage_Report.html obsahuje zapečená data (let D není null). Veřejně se nenasazuje."
+            exit 1
+          fi
+          if grep -qE '<(script|link)[^>]+(src|href)="(https?:)?//' Coverage_Report.html; then
+            echo "::error::Coverage_Report.html odkazuje na externí skript nebo styl."
+            exit 1
+          fi
+
+      - name: Sestavit složku webu
+        run: |
+          mkdir site
+          cp Coverage_Report.html site/index.html
+          cp Coverage_Report.html site/Coverage_Report.html
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
