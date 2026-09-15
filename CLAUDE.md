@@ -262,8 +262,9 @@ Uložený firemní styl Yanfeng, drž se ho:
 ## Nasazení
 
 GitHub Pages přes `.github/workflows/pages.yml`. Spouští se pushem
-`Coverage_Report.html` do `main` nebo do větve `claude/**`, případně ručně
-(workflow_dispatch). Workflow nejdřív ověří, že `let D = null;` a že soubor
+`Coverage_Report.html` do `main`, případně ručně (workflow_dispatch).
+Prostředí `github-pages` pouští nasazení jen z `main`, z jiných větví
+běh spadne na pravidlu ochrany prostředí. Workflow nejdřív ověří, že `let D = null;` a že soubor
 neodkazuje ven, pak nasadí soubor jako `index.html` i `Coverage_Report.html`.
 Žádný build, nasazuje se přesně to, co je v repu.
 
