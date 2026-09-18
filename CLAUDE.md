@@ -5,6 +5,8 @@ v prohlížeči, nasazuje se na SharePoint. Žádný build, žádné CDN, žádn
 
 **Soubor:** `Coverage_Report.html` (~320 kB)
 **Online:** https://uhanm056.github.io/Coverage-report-/ (GitHub Pages, veřejné, viz Nasazení)
+**Sdílená verze s daty:** soukromý artefakt na claude.ai, odkaz má Milan (viz Online sdílený režim).
+Odkaz do veřejného repa nepatří.
 **Autor / vlastník:** Milan, Operations Manager, Yanfeng Planá, OV51/64
 **Zákazník:** Mercedes-Benz, projekt **X540**, závod Brémy, díly Instrument Panel
 **Jazyk UI:** čeština. Komentáře v kódu česky.
@@ -20,7 +22,9 @@ Tyhle věci neporušuj, jinak nástroj v cílovém prostředí přestane fungova
 2. **Žádný build step.** Soubor se otevírá přímo z disku nebo SharePointu.
    Žádné moduly, žádný bundler, žádné `import`.
 3. **Nic neodchází ven.** Parsování Excelu, generování exportů i kreslení obrázků
-   běží lokálně. Zákaznická data nesmí opustit prohlížeč.
+   běží lokálně. Zákaznická data nesmí opustit prohlížeč. Jediná výjimka je
+   **online sdílený režim** (viz níž): tam se nahraný sešit ukládá do soukromé
+   databáze publikovaného artefaktu, kterou vidí jen lidé s nasdíleným odkazem.
 4. **`localStorage` jen v `try/catch`.** Používá se na uložení pravidel. Když selže,
    aplikace musí normálně fungovat dál.
 5. **Žádná zapečená data.** Repozitář i nasazená stránka jsou veřejné. V souboru
@@ -47,6 +51,7 @@ v tomto pořadí:
 | `export` | HTML a XLSX exporty |
 | `mail` | tělo mailu a `.eml` |
 | `PNG obrázek` | kreslení na canvas |
+| `sdílení` | online režim: sdílená databáze pro sešit a pravidla, stahování přes `downloads` |
 | `upload` | drag & drop, načtení souboru |
 
 Seznam sekcí i s čísly řádků vypíše:
@@ -188,6 +193,40 @@ přes `saveSoon()`. Jde exportovat a importovat jako JSON.
 
 Výchozí hodnoty pocházejí z QHELP akčního plánu, kde byl cíl 5 dnů pro celý řetězec.
 `split` je jen text vedle polí, nikde se nepočítá.
+
+---
+
+## Online sdílený režim (artefakt)
+
+Tenhle jeden soubor běží ve dvou režimech, rozhoduje konstanta `ONLINE` v sekci `data`:
+
+```js
+const ONLINE = !!(window.claude && typeof window.claude.use === 'function');
+```
+
+- **Standalone** (SharePoint, GitHub Pages, disk): `ONLINE` je `false`, sešit i pravidla
+  zůstávají v prohlížeči, pravidla v `localStorage`. Chová se přesně jako dřív.
+- **Online** (soubor publikovaný jako artefakt na claude.ai): `ONLINE` je `true`, stránka
+  dostane třídu `online` a sekce `sdílení` se připojí přes `claude.use('db')`.
+  Nahraný sešit se uloží do dokumentu `coverage/current` (`{data: D, file, at, by, stamp}`),
+  pravidla do `coverage/rules` (`{rules: R, at, by}`). Obě strany odebírají `onSnapshot`,
+  takže kolega vidí nový sešit i změnu pravidel bez obnovení stránky. Vlastní zápis se
+  pozná podle `stamp` (data) nebo shodného JSON (pravidla) a nepřekresluje se dvakrát.
+  `localStorage` se v online režimu nepoužívá vůbec.
+- Stahování souborů jde v online režimu přes `downloads.save()`, protože přímé
+  `<a download>` je v artefaktu blokované. Přípona `.eml` v jeho seznamu není, tam se
+  uživateli nabídne kopírování těla mailu do schránky.
+- Texty závislé na režimu mají třídy `.local-only` / `.online-only` (návod, drop zóna, patička).
+- Stav připojení ukazuje štítek `#shareState` v hlavičce (zelený = živě, oranžový = nedostupné).
+
+Publikuje se kopie souboru bez obalu `<html>/<head>/<body>` (platforma ho doplňuje sama)
+s deklarací `capabilities: {db: {}, downloads: true, user: {scopes: ['profile']}}`.
+Artefakt je soukromý, přístup se dává v jeho menu Sdílet, odkaz má Milan. Repo i GitHub Pages
+zůstávají bez dat, data jsou jen v databázi artefaktu. Aktualizace artefaktu = znovu publikovat
+kopii aktuálního `Coverage_Report.html` na stejnou URL (databáze zůstává, data se neztratí).
+
+Limity: jeden dokument má max. 256 KiB (sešit s 58 díly má ~15 kB, hlídá `DOC_LIMIT`),
+poslední upload přepíše předchozí pro všechny, historie se neukládá.
 
 ---
 

@@ -19,6 +19,14 @@ h1{font-size:21px;font-weight:700;letter-spacing:.2px}
 .pill b{font-weight:700}
 .pill.warn{background:#E89818;border-color:#E89818}
 .pill.bad{background:#E74C3C;border-color:#E74C3C}
+.hright{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* stav sdílení v online režimu (publikovaný artefakt), ve standalone souboru se nezobrazuje */
+.share{display:none;font-size:11.5px;padding:5px 11px;border-radius:20px;color:#fff;white-space:nowrap;
+ background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25)}
+.share.on{background:#28A745;border-color:#28A745}
+.share.off{background:#E89818;border-color:#E89818}
+body:not(.online) .online-only{display:none}
+body.online .local-only{display:none}
 .btn{background:#fff;color:#1A4F71;border:none;padding:9px 18px;border-radius:20px;font-size:13px;
  font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
 .btn:hover{background:#E6EEF4}
@@ -142,7 +150,10 @@ body.nodata #intro{display:block}
     <h1>Coverage Report — pokrytí u zákazníka</h1>
     <div class="sub" id="subline"></div>
    </div>
-   <button class="btn" id="btnUp">Nahrát Coverage.xlsx</button>
+   <div class="hright">
+    <span class="share" id="shareState"></span>
+    <button class="btn" id="btnUp">Nahrát Coverage.xlsx</button>
+   </div>
   </div>
   <div class="pills" id="hdrPills"></div>
  </div>
@@ -150,17 +161,21 @@ body.nodata #intro{display:block}
 
 <div class="wrap">
  <input type="file" id="file" accept=".xlsx,.xlsm" style="display:none">
- <div id="drop"><b>Přetáhni sem Coverage.xlsx</b>nebo klikni pro výběr souboru — přehled se přepočítá celý, nic se nikam neodesílá</div>
+ <div id="drop"><b>Přetáhni sem Coverage.xlsx</b>nebo klikni pro výběr souboru — přehled se přepočítá celý, <span class="local-only">nic se nikam neodesílá</span><span class="online-only">uloží se do sdíleného reportu a uvidí ho všichni kolegové s odkazem</span></div>
  <div class="err" id="err"></div>
  <div id="intro" class="card">
   <div class="bar" style="background:#3F70AE"></div>
   <div class="in">
    <div class="name">Jak začít</div>
    <div style="font-size:12px;color:#5A6B7A;line-height:1.6;margin-top:8px">
-    Nahraj aktuální <b>Coverage.xlsx</b> tlačítkem vpravo nahoře nebo přetažením do pole výš.
+    <span class="local-only">Nahraj aktuální <b>Coverage.xlsx</b> tlačítkem vpravo nahoře nebo přetažením do pole výš.
     Sešit se zpracuje jen v tomto prohlížeči, na žádný server se nic neposílá.
     Po načtení se zobrazí pravidla pokrytí, KPI karty, matice po dnech, detail podle dílů a exporty.
-    Nastavená pravidla si prohlížeč pamatuje pro příště.
+    Nastavená pravidla si prohlížeč pamatuje pro příště.</span>
+    <span class="online-only">Toto je <b>sdílená online verze</b> reportu. Nahraj aktuální <b>Coverage.xlsx</b> tlačítkem vpravo nahoře
+    nebo přetažením do pole výš. Sešit i nastavená pravidla se uloží do sdílené databáze tohoto reportu,
+    takže kolegové s odkazem vidí okamžitě totéž a nemusí nic nahrávat. Kdo nahraje nový sešit, přepíše ten předchozí
+    pro všechny. Data vidí jen lidé, kterým byl odkaz nasdílený.</span>
    </div>
   </div>
  </div>
@@ -296,7 +311,7 @@ body.nodata #intro{display:block}
   </div>
  </div>
 
- <footer>Yanfeng Planá · OV51/64 · vše běží lokálně v prohlížeči</footer>
+ <footer>Yanfeng Planá · OV51/64 · <span class="local-only">vše běží lokálně v prohlížeči</span><span class="online-only">sdílený online report, data vidí jen lidé s odkazem</span></footer>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -315,6 +330,9 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
 /* ---------- data ---------- */
 let D = null; /* data se berou výhradně z nahraného Coverage.xlsx. Sem nikdy nezapékat reálná data — soubor je nasazený veřejně na GitHub Pages. */
 const VARS = ['LHD','LHD HUD','RHD','RHD HUD'];
+/* Online režim = soubor publikovaný jako artefakt na claude.ai, kde existuje window.claude.use().
+   Ve standalone souboru (SharePoint, GitHub Pages) je false a všechno běží jako dřív. */
+const ONLINE = !!(window.claude && typeof window.claude.use === 'function');
 /* projekt a předmět mailu — měnit jen tady */
 const PROJECT = 'X540';
 const CUSTOMER = 'Mercedes-Benz';
@@ -333,8 +351,12 @@ VARS.forEach(v=>DEFAULTS.per[v]={daily:null});
 let R = JSON.parse(JSON.stringify(DEFAULTS));
 let ruleMode = true;
 
-function saveRules(){ try{ localStorage.setItem('yfCoverageRules', JSON.stringify(R)); }catch(e){} }
+function saveRules(){
+  if(ONLINE){ shareRules(); return; }          /* online: pravidla jdou do sdílené databáze, ne do localStorage */
+  try{ localStorage.setItem('yfCoverageRules', JSON.stringify(R)); }catch(e){}
+}
 function loadRules(){
+  if(ONLINE) return;                            /* online: pravidla přijdou ze sdílené databáze v initShare() */
   try{
     const s=localStorage.getItem('yfCoverageRules'); if(!s) return;
     const p=JSON.parse(s);
@@ -717,9 +739,7 @@ document.getElementById('bReset').onclick=()=>{
   R=JSON.parse(JSON.stringify(DEFAULTS)); saveRules(); renderAll(); toast('Nastaveny výchozí hodnoty');
 };
 document.getElementById('bExp').onclick=()=>{
-  const b=new Blob([JSON.stringify(R,null,2)],{type:'application/json'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(b);
-  a.download='coverage_pravidla.json'; a.click(); URL.revokeObjectURL(a.href);
+  dl('coverage_pravidla.json', JSON.stringify(R,null,2), 'application/json');
 };
 document.getElementById('bImp').onclick=()=>document.getElementById('fImp').click();
 document.getElementById('fImp').onchange=e=>{
@@ -891,19 +911,28 @@ function buildExportHtml(kind){
    ' z Coverage.xlsx (coverage date '+esc(D.covDate)+')</footer></div></body></html>';
 }
 
-function dlBlob(name, blob){
+function saveFile(name, blob){
+  if(ONLINE){
+    /* v publikovaném artefaktu je přímé stažení blokované, soubor se nabídne přes downloads */
+    if(!SHARE.dl){ toast('Stahování není v tomto zobrazení povolené'); return; }
+    SHARE.dl.save({filename:name, data:blob})
+      .then(()=>toast('Uloženo: '+name))
+      .catch(e=>{
+        const c=e&&e.code;
+        if(c==='declined') return;
+        if(c==='rejected_extension'||c==='extension_not_enabled')
+          toast('Formát .'+name.split('.').pop()+' nejde v online režimu uložit, použij kopírování do schránky');
+        else toast('Uložení se nepodařilo');
+      });
+    return;
+  }
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob); a.download=name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
-function dl(name, data, mime){
-  const b=new Blob([data],{type:mime});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(b); a.download=name;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-}
+function dlBlob(name, blob){ saveFile(name, blob); }
+function dl(name, data, mime){ saveFile(name, new Blob([data],{type:mime})); }
 function stamp(){ return D.covDate.split('.').reverse().join('-'); }
 
 function exportHtml(kind){
@@ -1364,6 +1393,108 @@ document.getElementById('eDetP').onclick=()=>{
   cv.toBlob(b=>{ dlBlob('Coverage_zakaznik_detail_'+stamp()+'.png',b); toast('Obrázek uložen'); },'image/png');
 };
 
+/* ---------- sdílení ---------- */
+/* Online režim (soubor publikovaný jako artefakt na claude.ai): stránka má sdílenou databázi
+   přes claude.use('db'). Nahraný sešit se uloží do dokumentu coverage/current a pravidla do
+   coverage/rules, takže každý s odkazem vidí totéž a nemusí sešit nahrávat znovu. Změny druhé
+   strany přicházejí živě přes onSnapshot. Ve standalone souboru je ONLINE false a nic z téhle
+   sekce se nespustí — data zůstávají v prohlížeči jako dřív. */
+const SHARE = {db:null, dl:null, user:null, uid:null, dataDoc:null, rulesDoc:null,
+  meta:null, rulesJson:'', myStamp:null, pendingRules:false, writing:Promise.resolve()};
+const DOC_LIMIT = 240000;   /* databáze dovolí 256 KiB na dokument, sešit s ~60 díly má ~15 kB */
+
+function shareStatus(txt, kind){
+  const el=document.getElementById('shareState'); if(!el) return;
+  el.textContent=txt; el.className='share '+(kind||'');
+  el.style.display=txt?'inline-block':'none';
+}
+/* zápisy do jednoho dokumentu jdou za sebou, nikdy souběžně */
+function queueWrite(doc, body, ok, failMsg){
+  SHARE.writing = SHARE.writing
+    .then(()=>doc.set(body))
+    .then(()=>{ if(ok) ok(); }, e=>{
+      console.warn('db write', e);
+      toast(failMsg+(e&&e.code==='invalid_argument'?' (nemáš právo zápisu)':''));
+    });
+}
+/* sešit nahraný tady → sdílený dokument */
+function shareData(fileName){
+  if(!SHARE.dataDoc){ toast('Sdílená databáze není dostupná, sešit vidíš jen ty'); return; }
+  const body={data:D, file:fileName, at:new Date().toISOString(), by:SHARE.uid||null,
+    stamp:Date.now().toString(36)+Math.random().toString(36).slice(2,8)};
+  if(JSON.stringify(body).length>DOC_LIMIT){ toast('Sešit je pro sdílení příliš velký, vidíš ho jen ty'); return; }
+  SHARE.myStamp=body.stamp; SHARE.meta=body;
+  queueWrite(SHARE.dataDoc, body, ()=>{ toast('Sešit nasdílen, kolegové ho vidí hned'); showSharedDrop(); },
+    'Sdílení sešitu se nepodařilo');
+}
+/* sdílený dokument → tahle stránka */
+function applyShared(d){
+  if(d.stamp && d.stamp===SHARE.myStamp){ SHARE.meta=d; return; }   /* vlastní zápis, už je vykreslený */
+  const ae=document.activeElement;
+  if(ae && ae.classList && ae.classList.contains('num')) ae.blur();
+  D=JSON.parse(JSON.stringify(d.data));                             /* snapshot je zmražený, potřebujeme kopii */
+  SHARE.meta=d;
+  document.body.classList.remove('nodata');
+  err.style.display='none';
+  renderAll();
+  showSharedDrop();
+}
+async function showSharedDrop(){
+  const m=SHARE.meta; if(!m||!D) return;
+  let who='';
+  if(m.by && SHARE.user){ try{ const ps=await SHARE.user.profiles([m.by]); who=(ps[m.by]&&ps[m.by].name)||''; }catch(e){} }
+  const when=m.at ? new Date(m.at).toLocaleString('cs-CZ',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+  drop.classList.add('ok');
+  drop.innerHTML='<b>Sdílený sešit: '+esc(m.file||'Coverage.xlsx')+'</b>Coverage date '+esc(D.covDate)+' · '+D.items.length+' dílů'+
+    (when?' · nahráno '+esc(when):'')+(who?' ('+esc(who)+')':'')+
+    ' · klikni pro nahrání nového sešitu, uvidí ho všichni';
+}
+/* pravidla: debouncovaný zápis, jen když se opravdu změnila */
+let shareRulesT=null;
+function shareRules(){
+  if(!SHARE.rulesDoc){ SHARE.pendingRules=true; return; }
+  clearTimeout(shareRulesT);
+  shareRulesT=setTimeout(()=>{
+    const j=JSON.stringify(R); if(j===SHARE.rulesJson) return;
+    SHARE.rulesJson=j;
+    queueWrite(SHARE.rulesDoc, {rules:JSON.parse(j), at:new Date().toISOString(), by:SHARE.uid||null}, null,
+      'Uložení pravidel se nepodařilo');
+  }, 500);
+}
+function applyRules(p){
+  const j=JSON.stringify(p); if(j===SHARE.rulesJson) return;      /* vlastní zápis nebo beze změny */
+  SHARE.rulesJson=j;
+  R=Object.assign(JSON.parse(JSON.stringify(DEFAULTS)),p);
+  VARS.forEach(v=>{ R.per[v]=Object.assign({daily:null},(p.per&&p.per[v])||{}); });
+  if(D) renderAll();
+}
+async function initShare(){
+  if(!ONLINE) return;
+  document.body.classList.add('online');
+  shareStatus('Online režim · připojuji…','');
+  let db=null, dl=null, user=null;
+  try{
+    [db,dl,user]=await Promise.all([window.claude.use('db'), window.claude.use('downloads'), window.claude.use('user')]);
+  }catch(e){ console.warn('claude.use', e); }
+  SHARE.dl=dl; SHARE.user=user;
+  if(user){ try{ SHARE.uid=await user.id(); }catch(e){} }
+  if(!db){ shareStatus('Sdílení nedostupné, sešit vidíš jen ty','off'); return; }
+  SHARE.db=db;
+  SHARE.dataDoc=db.doc('coverage/current');
+  SHARE.rulesDoc=db.doc('coverage/rules');
+  SHARE.dataDoc.onSnapshot(snap=>{
+    if(!snap.exists){ shareStatus('Sdíleno online · zatím bez sešitu','on'); return; }
+    const d=snap.data(); if(!d||!d.data) return;
+    shareStatus('Sdíleno online · živě','on');
+    applyShared(d);
+  }, e=>{ console.warn('db data', e); shareStatus('Sdílení přerušeno, obnov stránku','off'); });
+  SHARE.rulesDoc.onSnapshot(snap=>{
+    if(!snap.exists) return;
+    const d=snap.data(); if(d&&d.rules) applyRules(d.rules);
+  }, e=>console.warn('db rules', e));
+  if(SHARE.pendingRules){ SHARE.pendingRules=false; shareRules(); }
+}
+
 /* ---------- upload ---------- */
 const drop=document.getElementById('drop'), fin=document.getElementById('file'), err=document.getElementById('err');
 document.getElementById('btnUp').onclick=()=>fin.click();
@@ -1390,9 +1521,10 @@ function load(file){
       }
       renderAll();
       drop.classList.add('ok');
-      drop.innerHTML='<b>Načteno: '+file.name+'</b>Coverage date '+D.covDate+' · '+D.items.length+' dílů'+note+
+      drop.innerHTML='<b>Načteno: '+esc(file.name)+'</b>Coverage date '+D.covDate+' · '+D.items.length+' dílů'+note+
         ' · klikni pro nahrání jiného souboru';
       window.scrollTo({top:0,behavior:'smooth'});
+      if(ONLINE) shareData(file.name);
     }catch(x){
       err.style.display='block';
       err.textContent='Soubor se nepodařilo zpracovat: '+x.message;
@@ -1405,6 +1537,7 @@ function load(file){
 document.getElementById('subline').textContent=SUBLINE;
 loadRules();
 if(D) renderAll(); else document.body.classList.add('nodata');
+initShare();
 </script>
 </body>
 </html>
