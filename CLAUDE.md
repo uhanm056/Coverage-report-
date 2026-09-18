@@ -103,14 +103,21 @@ D = {
 
 Parsuje se tolerantně, ne podle pevných adres buněk:
 
-- **list `Coverage`** — hlavička se hledá podle textu `Description` ve sloupci A.
-  Datové sloupce se poznají tak, že hodnota v hlavičce je skutečné datum, takže
-  horizont se může zkrátit nebo prodloužit. Ostatní sloupce podle názvu
-  (`Plana stock`, `Customer stock`, `Transit`, `Additional transit`, `Item number`,
-  `Date uncovered`). Data končí prvním prázdným popisem.
+- **list `Coverage`** — název listu bez ohledu na velikost písmen a mezery; když
+  chybí, vezme se první list, kde je buňka `Description`. Hlavička je řádek, kde
+  je `Description` v kterémkoli sloupci, popisy dílů se berou z toho sloupce.
+  Datové sloupce jsou napravo od něj a poznají se podle hodnoty v hlavičce:
+  skutečné datum, excelové sériové číslo, nebo text `10.09.2026` / `2026-09-10`
+  (`headerDate()`), takže horizont se může zkrátit nebo prodloužit. Ostatní
+  sloupce podle názvu bez ohledu na velikost písmen (`Plana stock`, `Customer
+  stock`, `Transit`, `Additional transit`, `Item number`, `Date uncovered`),
+  nejdřív přesná shoda, pak začátek názvu. Řádky s prázdným popisem se přeskakují.
+  Když hlavička chybí, chybová hláška vypíše první řádky listu a názvy listů,
+  aby šlo z hlášky poznat, co v sešitu je (tohle se hodilo u kolegova souboru).
 - **list `Status`** — zdroje a jejich stav, hlavička na prvním řádku.
 - **list `MNG`** — bloky pohledů managementu. Řádek s hodnotou jen ve sloupci A
-  zahajuje nový blok, řádek `Variant` nese datumy, ostatní řádky jsou varianty.
+  zahajuje nový blok, řádek `Variant` nese datumy (i jako text), ostatní řádky
+  jsou varianty. Názvy obou listů se hledají bez ohledu na velikost písmen.
   Reálně jsou tam dva bloky: `Bremen Stock` a `Bremen+Plana Stock`.
 - **list `Pravidla`** (nepovinný, uživatel si ho může přidat) — sloupce
   Varianta / Odvolávka / Cíl zákazník / Cíl pipeline. Když existuje, přebije

@@ -381,24 +381,48 @@ function classify(desc){
 }
 
 /* ---------- parsing ---------- */
+/* Buňka hlavičky jako datum: skutečné Date, excelové sériové číslo, nebo text 10.09.2026 / 2026-09-10 / 10.9. */
+function headerDate(x){
+  if(x instanceof Date) return isNaN(x)?null:x;
+  if(typeof x==='number' && x>30000 && x<80000){ const d=new Date(Math.round((x-25569)*86400000)); return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()); }
+  if(typeof x!=='string') return null;
+  const t=x.trim(); let m;
+  if((m=t.match(/^(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})$/))) return new Date(+m[3],+m[2]-1,+m[1]);
+  if((m=t.match(/^(\d{4})-(\d{2})-(\d{2})/))) return new Date(+m[1],+m[2]-1,+m[3]);
+  if((m=t.match(/^(\d{1,2})\.\s?(\d{1,2})\.?$/))) return new Date(new Date().getFullYear(),+m[2]-1,+m[1]);
+  return null;
+}
+const norm = x => String(x==null?'':x).replace(/\s+/g,' ').trim().toLowerCase();
+
 function parseWorkbook(wb){
   const grid = n => wb.Sheets[n] ? XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,blankrows:true}) : null;
-  const cov = grid('Coverage');
-  if(!cov) throw new Error('V sešitu chybí list "Coverage".');
-  const h = cov.findIndex(r => r && String(r[0]).trim()==='Description');
-  if(h<0) throw new Error('Na listu "Coverage" nenalezena hlavička "Description".');
-  const hdr=cov[h], dcols=[];
-  for(let c=0;c<hdr.length;c++) if(hdr[c] instanceof Date) dcols.push(c);
-  if(!dcols.length) throw new Error('Na listu "Coverage" nenalezeny sloupce s daty pokrytí.');
-  const dates=dcols.map(c=>dd(hdr[c])), datesFull=dcols.map(c=>ddy(hdr[c])), isoA=dcols.map(c=>isoS(hdr[c]));
-  const col = n => hdr.findIndex(x=>String(x).trim().toLowerCase()===n);
+  const sheetNames = wb.SheetNames.join(', ');
+  const hdrRow = g => g ? g.findIndex(r => r && r.some(x=>norm(x)==='description')) : -1;
+
+  /* list Coverage: přesný název, pak bez ohledu na velikost písmen, pak kterýkoli list s hlavičkou Description */
+  let covName = wb.SheetNames.find(n=>n==='Coverage') || wb.SheetNames.find(n=>norm(n)==='coverage');
+  if(!covName) covName = wb.SheetNames.find(n=>hdrRow(grid(n))>=0);
+  if(!covName) throw new Error('V sešitu chybí list "Coverage" a na žádném listu není hlavička "Description". Listy v sešitu: '+sheetNames+'.');
+  const cov = grid(covName);
+  const h = hdrRow(cov);
+  if(h<0){
+    const peek = cov.filter(r=>r&&r.some(x=>x!==undefined&&x!==null&&x!=='')).slice(0,5)
+      .map((r,i)=>'řádek '+(i+1)+': '+r.slice(0,4).map(x=>x instanceof Date?ddy(x):String(x==null?'':x)).join(' | ')).join('; ');
+    throw new Error('Na listu "'+covName+'" nenalezena hlavička "Description". Začátek listu: '+peek+'. Listy v sešitu: '+sheetNames+'.');
+  }
+  const hdr=cov[h], dcols=[], dvals=[];
+  const dc = hdr.findIndex(x=>norm(x)==='description');
+  for(let c=dc+1;c<hdr.length;c++){ const d=headerDate(hdr[c]); if(d){ dcols.push(c); dvals.push(d); } }
+  if(!dcols.length) throw new Error('Na listu "'+covName+'" nenalezeny sloupce s daty pokrytí. Hlavička: '+hdr.map(x=>String(x==null?'':x)).filter(Boolean).slice(0,12).join(' | ')+'.');
+  const dates=dvals.map(dd), datesFull=dvals.map(ddy), isoA=dvals.map(isoS);
+  const col = n => { let i=hdr.findIndex(x=>norm(x)===n); if(i<0) i=hdr.findIndex(x=>norm(x).startsWith(n)); return i; };
   const iPl=col('plana stock'), iPp=col('plana partial stock'), iCs=col('customer stock'),
         iTr=col('transit'), iAt=col('additional transit'), iIt=col('item number'), iDu=col('date uncovered');
 
   const items=[];
   for(let r=h+1;r<cov.length;r++){
     const row=cov[r]; if(!row) continue;
-    const desc=row[0]; if(!desc||typeof desc!=='string'||!desc.trim()) continue;
+    const desc=row[dc]; if(!desc||typeof desc!=='string'||!desc.trim()) continue;
     items.push({variant:classify(desc), desc:desc.replace(/^ASM\s+/,'').trim(),
       item:iIt>=0?row[iIt]:'', plana:(iPl>=0?+row[iPl]:0)||0, planaPart:(iPp>=0?+row[iPp]:0)||0,
       custStock:(iCs>=0?+row[iCs]:0)||0,
@@ -416,16 +440,17 @@ function parseWorkbook(wb){
       custStock:rows.reduce((a,i)=>a+i.custStock,0), transit:rows.reduce((a,i)=>a+i.transit,0)};
   });
 
-  const stg=grid('Status')||[];
+  const sheet = n => grid(wb.SheetNames.find(x=>norm(x)===n)||'')||[];
+  const stg=sheet('status');
   const status=stg.slice(1).filter(r=>r&&r[0]).map(r=>({src:String(r[0]),file:r[1]||'-',
     date:(r[2] instanceof Date)?ddy(r[2]):(r[2]||'-'), status:String(r[3]||'').trim()||'-'}));
 
-  const mg=grid('MNG')||[]; const mng=[]; let cur=null;
+  const mg=sheet('mng'); const mng=[]; let cur=null;
   mg.forEach(r=>{
     if(!r||r[0]===undefined||r[0]===null||r[0]==='') return;
     const a=String(r[0]).trim();
     if(r[1]===undefined||r[1]===null||r[1]===''){ cur={title:a,dates:[],datesFull:[],rows:[]}; mng.push(cur); }
-    else if(a==='Variant'&&cur){ const ds=[]; for(let c=1;c<r.length;c++) if(r[c] instanceof Date) ds.push(r[c]);
+    else if(norm(a)==='variant'&&cur){ const ds=[]; for(let c=1;c<r.length;c++){ const d=headerDate(r[c]); if(d) ds.push(d); }
       cur.dates=ds.map(dd); cur.datesFull=ds.map(ddy); cur.n=ds.length; }
     else if(cur) cur.rows.push({variant:a, bal:r.slice(1,1+(cur.n||r.length-1)).map(x=>(+x)||0)});
   });
