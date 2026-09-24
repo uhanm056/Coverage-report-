@@ -243,6 +243,7 @@ body.nodata #intro{display:block}
  <h2>Detail podle dílů</h2>
  <div class="tabs" id="tabs"></div>
  <div class="scroll"><table class="small" id="detail"></table></div>
+ <div class="legend" id="detailNote"></div>
 
  <h2>Export</h2>
  <div class="rulebox">
@@ -288,6 +289,8 @@ body.nodata #intro{display:block}
      Bilance = zásoba Planá + zásoba zákazníka + transit − odvolávky zákazníka ke dni.
      Rozdělení do variant podle názvu dílu: LHD / RHD a příznak HUD.
      Transit je do bilance započítaný přímo ve výpočtu v sešitu, včetně sloupce Additional Transit.
+     Zásoba Planá je hotová zásoba; oranžové <b style="color:#E89818">+N</b> vedle ní jsou nekompletní kusy
+     (sloupec Plana partial stock), které se do bilance nepočítají.
      Záporná bilance = díl není ke dni pokrytý, bilance pod požadavkem = pokrytí je pod nastaveným pravidlem.
      Pravidla lze nastavit i přímo v sešitu — stačí do Coverage.xlsx přidat list <b>Pravidla</b>
      se sloupci Varianta / Odvolávka / Cíl zákazník / Cíl pipeline.
@@ -320,6 +323,8 @@ const PROJECT = 'X540';
 const CUSTOMER = 'Mercedes-Benz';
 const MAIL_SUBJECT = 'Coverage Report / Bestandsübersicht / Plana / ' + PROJECT;
 const SUBLINE = CUSTOMER+' · '+PROJECT+' · Instrument Panel · Yanfeng Planá';
+/* vysvětlivka k oranžovému +N ve sloupci Planá (nekompletní zásoba) */
+const PART_NOTE = 'Planá: černé číslo je hotová zásoba, oranžové <b style="color:#E89818">+N</b> jsou nekompletní kusy (sloupec Plana partial stock). Do bilance po dnech se počítá jen hotová zásoba, nekompletní kusy jsou informace, co se dá ještě dodělat.';
 const fmt = n => (n===null||n===undefined||isNaN(n)) ? '' : Math.round(n).toLocaleString('cs-CZ');
 const f1  = n => (n===null||n===undefined||isNaN(n)||!isFinite(n)) ? '–' : n.toFixed(1).replace('.',',');
 const dd  = d => ('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2)+'.';
@@ -648,13 +653,13 @@ function renderTabs(){
 function renderDetail(){
   const rows=D.items.filter(i=>i.variant===active);
   let t='<thead><tr><th class="l">Popis</th><th class="l">Item number</th><th>ks/den</th>'+
-   '<th>Planá</th><th>Zákazník</th><th>Transit</th><th class="l">První nekrytá objednávka</th>'+
+   '<th title="Hotová zásoba v Plané. Oranžové +N = nekompletní kusy navíc, do bilance se nepočítají">Planá</th><th>Zákazník</th><th>Transit</th><th class="l">První nekrytá objednávka</th>'+
    D.dates.map(x=>`<th>${x}</th>`).join('')+'</tr></thead><tbody>';
   rows.forEach(i=>{
     const az=i.bal.every(v=>v===0), ir=itemReq(i);
     t+=`<tr><td class="l">${i.desc}</td><td class="l" style="color:#7A8B99">${i.item||''}</td>`+
       `<td style="color:#7A8B99">${fmt(ir.daily)}</td>`+
-      `<td>${i.plana}${i.planaPart?'<span style="color:#E89818"> +'+i.planaPart+'</span>':''}</td>`+
+      `<td>${i.plana}${i.planaPart?'<span style="color:#E89818" title="Nekompletní zásoba v Plané (sloupec Plana partial stock): rozpracované nebo nekompletní kusy, do bilance se nepočítají"> +'+i.planaPart+'</span>':''}</td>`+
       `<td>${i.custStock}</td><td>${i.transit}</td>`+
       `<td class="l" style="color:${i.firstUnc==='-'?'#9AA8B4':'#C0392B'};font-weight:600">${i.firstUnc}</td>`+
       i.bal.map(v=>`<td class="v ${clsItem(v,az)}">${fmt(v)}</td>`).join('')+'</tr>';
@@ -667,6 +672,7 @@ function renderDetail(){
     `<td class="v">${rows.reduce((a,i)=>a+i.transit,0)}</td><td></td>`+
     sub.map(v=>`<td class="v ${cls(v,sub[0],false,sreq)}">${fmt(v)}</td>`).join('')+'</tr></tbody>';
   document.getElementById('detail').innerHTML=t;
+  document.getElementById('detailNote').innerHTML=D.items.some(i=>i.planaPart)?'<span style="display:block">'+PART_NOTE+'</span>':'';
 }
 document.getElementById('tabs').onclick=e=>{ const b=e.target.closest('.tab'); if(!b) return; active=b.dataset.v; renderTabs(); renderDetail(); };
 function renderStatus(){
@@ -858,7 +864,7 @@ function expDetailTable(v){
     const az=i.bal.every(x=>x===0), ir=itemReq(i);
     t+=`<tr><td class="l">${esc(i.desc)}</td><td class="l" style="color:#7A8B99">${esc(i.item)}</td>`+
       `<td style="color:#7A8B99">${fmt(ir.daily)}</td>`+
-      `<td>${i.plana}${i.planaPart?' <span style="color:#E89818">+'+i.planaPart+'</span>':''}</td>`+
+      `<td>${i.plana}${i.planaPart?' <span style="color:#E89818" title="Nekompletní zásoba v Plané (sloupec Plana partial stock): rozpracované nebo nekompletní kusy, do bilance se nepočítají">+'+i.planaPart+'</span>':''}</td>`+
       `<td>${i.custStock}</td><td>${i.transit}</td>`+
       `<td class="l" style="color:${i.firstUnc==='-'?'#9AA8B4':'#C0392B'};font-weight:600">${esc(i.firstUnc)}</td>`+
       i.bal.map(x=>`<td class="v ${clsItem(x,az)}">${fmt(x)}</td>`).join('')+'</tr>';
@@ -896,6 +902,7 @@ function buildExportHtml(kind){
   if(cust){
     body += '<h2>Souhrn podle variant</h2>'+expSummaryTable()+expLegend();
     VARS.forEach(v=>{ body += '<h2>IP '+v+'</h2>'+expDetailTable(v); });
+    if(D.items.some(i=>i.planaPart)) body += '<div class="legend"><span style="display:block">'+PART_NOTE+'</span></div>';
   } else {
     body += '<h2>Souhrn podle variant</h2>'+expSummaryTable()+expLegend()+
             '<h2>Pokrytí u zákazníka — Brémy'+(b?' · '+esc(b.title):'')+'</h2>'+expBremenTable()+expLegend();

@@ -97,6 +97,12 @@ D = {
 
 **Souhrn** `D.summary[i]`: totéž agregované za variantu plus `items` (počet dílů).
 
+`planaPart` je nekompletní zásoba v Plané (sloupec `Plana partial stock`). Zobrazuje
+se jako oranžové `+N` vedle hotové zásoby, do bilance nevstupuje (bilance přichází
+hotová ze sešitu). Vysvětlivka je v konstantě `PART_NOTE`: tooltip na čísle
+i na hlavičce sloupce, poznámka pod detailem (jen když se `planaPart` vyskytne),
+karta Metodika a HTML export.
+
 ---
 
 ## Zdrojový sešit Coverage.xlsx
